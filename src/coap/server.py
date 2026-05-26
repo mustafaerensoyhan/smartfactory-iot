@@ -29,6 +29,10 @@ SENSOR_CONFIG = {
     "power":       {"unit": "kW",   "base": 45.0, "noise": 5.0},
 }
 
+# CoAP Content-Format identifier for application/json (RFC 7252 + IANA)
+CF_JSON = 50
+
+
 def _sim(sensor: str) -> dict:
     cfg = SENSOR_CONFIG[sensor]
     return {
@@ -36,6 +40,7 @@ def _sim(sensor: str) -> dict:
         "unit":  cfg["unit"],
         "ts":    datetime.now(timezone.utc).isoformat(),
     }
+
 
 def _json(data: dict) -> bytes:
     return json.dumps(data).encode()
@@ -45,19 +50,11 @@ def _json(data: dict) -> bytes:
 
 class SensorResource(resource.ObservableResource):
     """
-    An observable CoAP resource that represents a single sensor on a line.
+    A CoAP resource representing one sensor on one production line.
 
-    TODO 1: Implement this class.
-    Requirements:
-      - Accept line and sensor_type in __init__
-      - Store the current reading (initially simulated)
-      - Start an asyncio background task (_update_loop) that:
-          * Simulates a new reading every 5 seconds
-          * Calls self.updated_state() to notify observers
-      - Implement render_get:
-          * Return a 2.05 Content response
-          * Content-Format: 50 (application/json)
-          * Payload: JSON-encoded current reading
+    Inherits ObservableResource so clients can register Observe (RFC 7641):
+    the server then pushes a fresh notification whenever updated_state() is
+    called. The background _update_loop simulates a new reading every 5 s.
     """
 
     def __init__(self, line: str, sensor_type: str):
@@ -65,40 +62,37 @@ class SensorResource(resource.ObservableResource):
         self.line        = line
         self.sensor_type = sensor_type
         self._reading    = _sim(sensor_type)
-        # TODO: start the background update loop
-        # Hint: asyncio.ensure_future(self._update_loop())
+        # Schedule the per-resource update loop on the running event loop.
+        # ensure_future works here because __init__ runs inside build_server(),
+        # which is itself awaited from asyncio.run(main()).
+        self._task = asyncio.ensure_future(self._update_loop())
 
     async def _update_loop(self) -> None:
-        """
-        TODO 2: Every 5 seconds, simulate a new reading and notify observers.
-        """
-        # TODO: implement this coroutine
-        pass
+        """Refresh the reading every 5 s and notify all subscribed observers."""
+        try:
+            while True:
+                await asyncio.sleep(5)
+                self._reading = _sim(self.sensor_type)
+                # Tell aiocoap to push a fresh notification to every observer
+                self.updated_state()
+        except asyncio.CancelledError:
+            log.debug(f"Update loop cancelled for {self.line}/{self.sensor_type}")
 
     async def render_get(self, request: Message) -> Message:
-        """
-        TODO 3: Return the current sensor reading as a JSON response.
-        Hint: use aiocoap.numbers.contentformat.ContentFormat.JSON (value 50)
-              or pass content_format=50 to Message(...)
-        """
-        # TODO: implement this method
-        raise NotImplementedError
+        """Return the current sensor reading as JSON with content-format 50."""
+        return Message(
+            code=Code.CONTENT,
+            payload=_json(self._reading),
+            content_format=CF_JSON,
+        )
 
 
 # ── Actuator Resource ─────────────────────────────────────────────────────────
 
 class ActuatorResource(resource.Resource):
     """
-    A CoAP resource representing a controllable fan actuator.
-
-    TODO 4: Implement this class.
-    Requirements:
-      - Track state: "OFF" initially
-      - render_get: return current state as JSON {"state": "ON"|"OFF"}
-      - render_put: accept {"state": "ON"} or {"state": "OFF"}
-          * Update internal state
-          * Return 2.04 Changed on success
-          * Return 4.00 Bad Request if payload is malformed or state is invalid
+    A non-observable resource representing a cooling fan.
+    GET returns current state; PUT changes it (only ON/OFF accepted).
     """
 
     def __init__(self):
@@ -106,68 +100,100 @@ class ActuatorResource(resource.Resource):
         self._state = "OFF"
 
     async def render_get(self, request: Message) -> Message:
-        """TODO 5: Return current fan state as JSON."""
-        # TODO: implement this method
-        raise NotImplementedError
+        return Message(
+            code=Code.CONTENT,
+            payload=_json({"state": self._state}),
+            content_format=CF_JSON,
+        )
 
     async def render_put(self, request: Message) -> Message:
-        """TODO 6: Accept ON/OFF command and update state."""
-        # TODO: implement this method
-        raise NotImplementedError
+        # Try to parse the body; reject any malformed input with 4.00.
+        try:
+            data = json.loads(request.payload)
+        except (json.JSONDecodeError, AttributeError):
+            return Message(
+                code=Code.BAD_REQUEST,
+                payload=_json({"error": "payload must be JSON"}),
+                content_format=CF_JSON,
+            )
+
+        state = data.get("state") if isinstance(data, dict) else None
+        if state not in ("ON", "OFF"):
+            return Message(
+                code=Code.BAD_REQUEST,
+                payload=_json({"error": "state must be 'ON' or 'OFF'"}),
+                content_format=CF_JSON,
+            )
+
+        self._state = state
+        log.info(f"Fan state changed → {state}")
+        return Message(
+            code=Code.CHANGED,
+            payload=_json({"state": state}),
+            content_format=CF_JSON,
+        )
 
 
 # ── Block-wise Manifest Resource ──────────────────────────────────────────────
 
 class ManifestResource(resource.Resource):
     """
-    A large resource that triggers CoAP Block2 transfer.
-
-    TODO 7: Implement this class.
-    Requirements:
-      - render_get must return a payload of AT LEAST 3072 bytes (3 KB)
-      - Content-Format: 50 (application/json)
-      - The payload should be a realistic-looking firmware manifest
-        (list of sensor firmware versions, checksums, update URLs, etc.)
-      - aiocoap handles Block2 fragmentation automatically if the payload
-        exceeds the negotiated block size — you just need to return the full payload
+    A resource large enough (>= 3 KB) to trigger Block2 fragmentation.
+    aiocoap auto-chunks the response into Block2 blocks based on the
+    negotiated block size — we just return the full payload.
     """
 
     async def render_get(self, request: Message) -> Message:
-        """TODO 8: Return a >= 3 KB JSON firmware manifest."""
-        # TODO: implement this method
-        # Hint: build a large dict with ~50 firmware entries, json.dumps it
-        # Verify: len(payload) >= 3072
-        raise NotImplementedError
+        manifest = {
+            "schema_version": "1.0",
+            "factory_id":     "SMARTFACTORY-001",
+            "generated_at":   datetime.now(timezone.utc).isoformat(),
+            "firmware_entries": [
+                {
+                    "device_id":       f"sensor-{i:04d}",
+                    "device_type":     ["temperature", "vibration", "power"][i % 3],
+                    "line":            f"line{(i % 2) + 1}",
+                    "current_version": f"2.{i % 10}.{i % 20}",
+                    "target_version":  "3.0.0",
+                    "checksum_sha256": f"a1b2c3d4e5f67890{i:048x}",
+                    "update_url":      f"coap://updates.smartfactory.local/fw/sensor-{i:04d}-v3.0.0.bin",
+                    "size_bytes":      1024 * (i + 1),
+                    "mandatory":       (i % 5 == 0),
+                }
+                for i in range(50)
+            ],
+        }
+        payload = _json(manifest)
+        # Safety: make sure we are actually big enough to trigger Block2
+        assert len(payload) >= 3072, f"Manifest only {len(payload)} bytes — needs >= 3072"
+        return Message(code=Code.CONTENT, payload=payload, content_format=CF_JSON)
 
 
 # ── Resource Tree & Server Setup ──────────────────────────────────────────────
 
 async def build_server() -> aiocoap.Context:
-    """
-    TODO 9: Build the CoAP resource tree and create the server context.
-
-    Register resources at these paths (use colon-separated path segments):
-      factory/line1/temperature  → SensorResource("line1", "temperature")
-      factory/line1/vibration    → SensorResource("line1", "vibration")
-      factory/line1/power        → SensorResource("line1", "power")
-      factory/line2/temperature  → SensorResource("line2", "temperature")
-      actuator/line1/fan         → ActuatorResource()
-      factory/manifest           → ManifestResource()
-
-    Also add a /.well-known/core resource listing using resource.WKCResource.
-
-    Return the created aiocoap.Context.
-    """
+    """Build the CoAP resource tree and create the server context."""
     root = resource.Site()
 
-    # TODO: register all resources
-    # Example:
-    #   root.add_resource(['factory', 'line1', 'temperature'],
-    #                     SensorResource('line1', 'temperature'))
+    # Sensor resources (all 4 are observable per the spec)
+    root.add_resource(['factory', 'line1', 'temperature'],
+                      SensorResource('line1', 'temperature'))
+    root.add_resource(['factory', 'line1', 'vibration'],
+                      SensorResource('line1', 'vibration'))
+    root.add_resource(['factory', 'line1', 'power'],
+                      SensorResource('line1', 'power'))
+    root.add_resource(['factory', 'line2', 'temperature'],
+                      SensorResource('line2', 'temperature'))
 
-    # TODO: add /.well-known/core
-    # root.add_resource(['.well-known', 'core'],
-    #                   resource.WKCResource(root.get_resources_as_linkheader))
+    # Actuator
+    root.add_resource(['actuator', 'line1', 'fan'], ActuatorResource())
+
+    # Block-wise manifest (large)
+    root.add_resource(['factory', 'manifest'], ManifestResource())
+
+    # CoRE Link Format discovery endpoint
+    root.add_resource(['.well-known', 'core'],
+                      resource.WKCResource(root.get_resources_as_linkheader))
 
     context = await aiocoap.Context.create_server_context(root)
     return context
@@ -177,7 +203,9 @@ async def main() -> None:
     context = await build_server()
     log.info("CoAP server running on coap://localhost:5683")
     log.info("Resources: /factory/line{1,2}/{temperature,vibration,power}, /actuator/line1/fan, /factory/manifest")
-    await asyncio.get_event_loop().create_future()  # run forever
+    log.info("Discovery: coap://localhost/.well-known/core")
+    # Run forever until Ctrl-C
+    await asyncio.get_event_loop().create_future()
 
 
 if __name__ == "__main__":
