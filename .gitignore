@@ -11,4 +11,3 @@ certs/*.pem
 *.log
 .venv/
 __pycache__/
-captures/
