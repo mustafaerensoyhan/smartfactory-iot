@@ -37,6 +37,14 @@ SENSORS = {
 
 CRITICAL_TEMP_THRESHOLD = 85.0
 
+# ── paho-mqtt 2.x compatibility shim ──────────────────────────────────────────
+# paho-mqtt 2.0+ requires callback_api_version. We pin to VERSION1 so the
+# skeleton's on_connect(client, userdata, flags, rc) signature still works.
+try:
+    _PAHO_V2_KWARGS = {"callback_api_version": mqtt.CallbackAPIVersion.VERSION1}
+except AttributeError:
+    _PAHO_V2_KWARGS = {}   # paho-mqtt 1.x — no kwarg needed
+
 
 @dataclass
 class SensorReading:
@@ -60,33 +68,41 @@ class SmartFactoryPublisher:
     # ── Connection ─────────────────────────────────────────────────────────────
 
     def _build_client(self) -> mqtt.Client:
-        """
-        TODO 1: Create and configure the MQTT client.
-        Requirements:
-          - Use CLIENT_ID as the client identifier
-          - Set clean_session=False for a persistent session
-          - Register on_connect, on_publish callbacks (defined below)
-          - Configure the Last Will and Testament for EACH line:
-              topic   = f"factory/{line}/status"
-              payload = "offline"
-              qos     = 1
-              retain  = True
-            (Note: paho only supports a single LWT per client — set it for line1;
-             the tests only verify line1 LWT)
-        """
-        # TODO: implement this method
-        raise NotImplementedError
+        """Create and configure the MQTT client with persistent session + LWT."""
+        client = mqtt.Client(
+            **_PAHO_V2_KWARGS,
+            client_id=CLIENT_ID,
+            clean_session=False,    # persistent session — broker retains subscriptions/queued msgs
+        )
+        client.on_connect = self.on_connect
+        client.on_publish = self.on_publish
+
+        # Last Will & Testament — paho only supports ONE LWT per client.
+        # We set it for line1 (the test only verifies line1 LWT).
+        client.will_set(
+            topic="factory/line1/status",
+            payload="offline",
+            qos=1,
+            retain=True,
+        )
+        return client
 
     def connect(self) -> None:
-        """
-        TODO 2: Connect to the broker and publish the initial 'online' retained
-        status message for each line.
-          - Start the network loop (loop_start)
-          - Wait up to 5 seconds for the connection to establish
-          - For each line, publish retained 'online' to factory/{line}/status (QoS 1)
-        """
-        # TODO: implement this method
-        raise NotImplementedError
+        """Connect to broker, then publish retained 'online' for each line."""
+        self._client = self._build_client()
+        self._client.connect(self.broker_host, self.broker_port, keepalive=60)
+        self._client.loop_start()
+
+        # Wait up to 5 seconds for the connection to be established
+        for _ in range(50):
+            if self._client.is_connected():
+                break
+            time.sleep(0.1)
+
+        # Initial retained 'online' for each line (so consumers see it on join)
+        for line in LINES:
+            self._client.publish(f"factory/{line}/status", "online", qos=1, retain=True)
+        log.info("Published retained 'online' status for all lines")
 
     def disconnect(self) -> None:
         """Cleanly disconnect: publish 'offline' retained for each line, then stop."""
@@ -101,21 +117,15 @@ class SmartFactoryPublisher:
     # ── Callbacks ──────────────────────────────────────────────────────────────
 
     def on_connect(self, client, userdata, flags, rc: int) -> None:
-        """
-        TODO 3: Implement the on_connect callback.
-          - Log "Connected (rc=<rc>)" at INFO level on success (rc == 0)
-          - Log "Connection refused: <rc>" at ERROR level on failure
-        """
-        # TODO: implement this callback
-        pass
+        """Called by paho when the broker responds to our CONNECT."""
+        if rc == 0:
+            log.info(f"Connected (rc={rc})")
+        else:
+            log.error(f"Connection refused: {rc}")
 
     def on_publish(self, client, userdata, mid: int) -> None:
-        """
-        TODO 4: Implement the on_publish callback.
-          - Log "PUBACK received for mid=<mid>" at DEBUG level
-        """
-        # TODO: implement this callback
-        pass
+        """Called when a QoS 1 PUBACK or QoS 2 PUBCOMP is received."""
+        log.debug(f"PUBACK received for mid={mid}")
 
     # ── Sensor Simulation ──────────────────────────────────────────────────────
 
@@ -135,27 +145,24 @@ class SmartFactoryPublisher:
         )
 
     def _topic(self, line: str, sensor: str) -> str:
-        """
-        TODO 5: Return the correct MQTT topic string.
-          Format: factory/{line}/{sensor}
-          Example: factory/line1/temperature
-        """
-        # TODO: implement this method
-        raise NotImplementedError
+        """MQTT topic for a sensor: factory/{line}/{sensor}."""
+        return f"factory/{line}/{sensor}"
 
     # ── Publishing ─────────────────────────────────────────────────────────────
 
     def publish_reading(self, line: str, sensor: str) -> SensorReading:
-        """
-        TODO 6: Simulate a reading and publish it.
-          - Generate a SensorReading using _simulate_reading
-          - Serialise to JSON (use dataclasses.asdict)
-          - Publish to the correct topic at the sensor's configured QoS level
-          - Log the publication: "[{line}/{sensor}] value={value} {unit}  QoS={qos}  seq={seq}"
-          - Return the SensorReading for testing purposes
-        """
-        # TODO: implement this method
-        raise NotImplementedError
+        """Simulate a reading and publish it at the sensor's configured QoS."""
+        reading = self._simulate_reading(line, sensor)
+        topic   = self._topic(line, sensor)
+        qos     = SENSORS[sensor]["qos"]
+        payload = json.dumps(asdict(reading))
+
+        self._client.publish(topic, payload, qos=qos)
+        log.info(
+            f"[{reading.line}/{reading.sensor}] "
+            f"value={reading.value} {reading.unit}  QoS={qos}  seq={reading.seq}"
+        )
+        return reading
 
     # ── Main Loop ──────────────────────────────────────────────────────────────
 

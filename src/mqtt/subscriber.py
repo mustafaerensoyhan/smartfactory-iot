@@ -26,11 +26,17 @@ BROKER_HOST  = "localhost"
 BROKER_PORT  = 1883
 CLIENT_ID    = "smartfactory-subscriber-001"
 
-TOPIC_ALL        = "factory/#"         # all factory messages
-TOPIC_TEMP       = "factory/+/temperature"  # all temperature readings (any line)
+TOPIC_ALL        = "factory/#"                  # all factory messages (wildcard)
+TOPIC_TEMP       = "factory/+/temperature"      # all temperatures (any line)
 
 CRITICAL_TEMP    = 85.0
 SUMMARY_INTERVAL = 30   # seconds
+
+# paho-mqtt 2.x compatibility (see publisher.py for explanation)
+try:
+    _PAHO_V2_KWARGS = {"callback_api_version": mqtt.CallbackAPIVersion.VERSION1}
+except AttributeError:
+    _PAHO_V2_KWARGS = {}
 
 
 class SmartFactorySubscriber:
@@ -39,7 +45,11 @@ class SmartFactorySubscriber:
     def __init__(self, broker_host: str = BROKER_HOST, broker_port: int = BROKER_PORT):
         self.broker_host  = broker_host
         self.broker_port  = broker_port
-        self._client      = mqtt.Client(client_id=CLIENT_ID, clean_session=False)
+        self._client      = mqtt.Client(
+            **_PAHO_V2_KWARGS,
+            client_id=CLIENT_ID,
+            clean_session=False,
+        )
         self._msg_counts: dict[str, int] = defaultdict(int)
         self._last_summary = time.time()
         self._alerts_fired = 0
@@ -49,68 +59,86 @@ class SmartFactorySubscriber:
 
     # ── Connection ─────────────────────────────────────────────────────────────
 
-    def on_connect(self, client, userdata, flags: dict, rc: int) -> None:
-        """
-        TODO 1: On successful connect (rc == 0):
-          - Log "Connected to broker"
-          - Subscribe to TOPIC_ALL at QoS 1
-          - Subscribe to TOPIC_TEMP at QoS 2  (separate subscription)
-          Log any connection failure at ERROR level.
-        """
-        # TODO: implement this callback
-        pass
+    def on_connect(self, client, userdata, flags, rc: int) -> None:
+        """Subscribe to wildcard and temperature topics on successful connect."""
+        if rc == 0:
+            log.info("Connected to broker")
+            # Subscribe to ALL factory traffic at QoS 1
+            client.subscribe(TOPIC_ALL, qos=1)
+            # SEPARATE subscription for temperature at the strongest QoS (2)
+            client.subscribe(TOPIC_TEMP, qos=2)
+            log.info(f"Subscribed: {TOPIC_ALL} (QoS 1) and {TOPIC_TEMP} (QoS 2)")
+        else:
+            log.error(f"Connection failed (rc={rc})")
 
     # ── Message Handling ───────────────────────────────────────────────────────
 
     def on_message(self, client, userdata, msg: mqtt.MQTTMessage) -> None:
-        """
-        TODO 2: Handle every incoming message.
-          - Increment self._msg_counts[msg.topic]
-          - Attempt to parse msg.payload as JSON; fall back to raw string
-          - Call _print_message to display the message
-          - If the topic ends with '/temperature', call _check_temperature_alert
-          - Every SUMMARY_INTERVAL seconds, call _print_summary
-        """
-        # TODO: implement this callback
-        pass
+        """Handle every incoming message: count, parse, display, check alerts."""
+        self._msg_counts[msg.topic] += 1
+
+        # Try JSON-parse the payload; fall back to raw string
+        try:
+            payload = json.loads(msg.payload)
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            try:
+                payload = msg.payload.decode(errors="replace")
+            except AttributeError:
+                payload = str(msg.payload)
+
+        self._print_message(msg, payload)
+
+        if msg.topic.endswith("/temperature"):
+            self._check_temperature_alert(msg.topic, payload)
+
+        # Periodic summary
+        if time.time() - self._last_summary >= SUMMARY_INTERVAL:
+            self._print_summary()
+            self._last_summary = time.time()
 
     def _print_message(self, msg: mqtt.MQTTMessage, payload: Any) -> None:
-        """
-        TODO 3: Print a formatted message line:
-          Format: [HH:MM:SS] {topic}  val={value_or_payload}  QoS={qos}  retain={retain}
-          - If payload is a dict with key "value", show that value with unit if present
-          - Otherwise show the raw payload
-        """
-        # TODO: implement this method
-        pass
+        """Format and log one received message."""
+        ts = datetime.now().strftime("%H:%M:%S")
+        if isinstance(payload, dict) and "value" in payload:
+            val_str = f"{payload['value']}"
+            if "unit" in payload:
+                val_str = f"{payload['value']} {payload['unit']}"
+        else:
+            val_str = str(payload)
+        log.info(
+            f"[{ts}] {msg.topic}  val={val_str}  "
+            f"QoS={msg.qos}  retain={bool(msg.retain)}"
+        )
 
     def _check_temperature_alert(self, topic: str, payload: Any) -> None:
-        """
-        TODO 4: Check if a temperature reading is critical.
-          - If payload is a dict and payload["value"] > CRITICAL_TEMP:
-              - Increment self._alerts_fired
-              - Print:
-                  ╔══════════════════════════════════════╗
-                  ║  ⚠ CRITICAL ALERT — {topic}
-                  ║  Temperature: {value}°C  (threshold: {CRITICAL_TEMP}°C)
-                  ║  Time: {timestamp from payload or now}
-                  ╚══════════════════════════════════════╝
-        """
-        # TODO: implement this method
-        pass
+        """Fire a CRITICAL ALERT banner if temperature > 85°C."""
+        if not isinstance(payload, dict):
+            return
+        value = payload.get("value")
+        if not isinstance(value, (int, float)):
+            return
+        if value > CRITICAL_TEMP:
+            self._alerts_fired += 1
+            ts = payload.get("timestamp", datetime.now(timezone.utc).isoformat())
+            print()
+            print("╔══════════════════════════════════════════════════════════╗")
+            print(f"║  ⚠ CRITICAL ALERT — {topic}")
+            print(f"║  Temperature: {value}°C  (threshold: {CRITICAL_TEMP}°C)")
+            print(f"║  Time: {ts}")
+            print("╚══════════════════════════════════════════════════════════╝")
+            print()
 
     def _print_summary(self) -> None:
-        """
-        TODO 5: Print a summary of messages received per topic.
-          Format:
-            ── Message Summary ──────────────────────
-            {topic:<50}  {count:>6} msgs
-            ...
-            Total: {sum} messages  |  Alerts fired: {self._alerts_fired}
-            ─────────────────────────────────────────
-        """
-        # TODO: implement this method
-        pass
+        """Print a per-topic message count summary."""
+        print()
+        print("── Message Summary ──────────────────────────────────────")
+        total = 0
+        for topic, count in sorted(self._msg_counts.items()):
+            print(f"  {topic:<50}  {count:>6} msgs")
+            total += count
+        print(f"  Total: {total} messages  |  Alerts fired: {self._alerts_fired}")
+        print("─────────────────────────────────────────────────────────")
+        print()
 
     # ── Run ────────────────────────────────────────────────────────────────────
 
