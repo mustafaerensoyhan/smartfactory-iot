@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+.venv/
+captures/*.pcap
+certs/*.key
+certs/*.crt
+certs/*.pem
+.env
+*.log
+.venv/
+__pycache__/
+captures/
