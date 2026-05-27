@@ -1,147 +1,151 @@
-# Module 1 Assignment — SmartFactory IoT Protocol Integration
+# SmartFactory IoT Pipeline
 
-**Real-Time Data Analytics for IoT** · Graduate Course · Module 1
+A simulated real-time IoT data pipeline for a factory with two production lines. Sensors publish telemetry through **MQTT** and **CoAP**; subscribers consume and process the streams; packet-level traces and a comparative analysis are included.
 
----
-
-## Quick Start
-
-```bash
-# 1. Install dependencies and start Docker services
-bash setup.sh
-
-# 2. Read the full assignment specification
-open Module1_Assignment.docx
-
-# 3. Work through the tasks in order:
-#    Task 1 → src/mqtt/publisher.py  + src/mqtt/subscriber.py
-#    Task 2 → src/coap/server.py     + src/coap/observer.py
-#    Task 3 → src/amqp/topology.py   + src/amqp/producer.py   + src/amqp/consumer.py
-#    Task 4 → bash scripts/capture.sh → annotate report/packet_analysis.md
-#    Task 5 → report/comparison_report.md
-
-# 4. Run all tests before submitting
-pytest tests/ -v --tb=short
-```
+Submission for **Module 2 — Real-Time Data Analytics for IoT** (Graduate, Ontario Tech University).
 
 ---
 
-## Repository Structure
+## Scenario
+
+The simulated factory has two production lines (`line1`, `line2`), each with three sensors and one cooling-fan actuator:
+
+| Sensor | Unit | Update rate |
+|---|---|---|
+| Temperature | °C | 1 Hz (MQTT) · every 5 s (CoAP) |
+| Vibration | mm/s | 1 Hz · 5 s |
+| Power | kW | 1 Hz · 5 s |
+
+A critical alert fires when any temperature reading exceeds **85 °C**. Cooling fans are addressable via CoAP PUT.
+
+The pipeline is implemented twice (MQTT and CoAP) so the two protocols can be compared on the same workload. AMQP (Task 3) is intentionally out of scope for this submission per instructor guidance; the corresponding starter scaffolding remains under `src/amqp/` but is not implemented.
+
+---
+
+## Repository layout
 
 ```
-module1-assignment/
+smartfactory-iot/
 ├── src/
 │   ├── mqtt/
-│   │   ├── publisher.py      ← Task 1.1  Fill in all TODO sections
-│   │   └── subscriber.py     ← Task 1.2  Fill in all TODO sections
-│   ├── coap/
-│   │   ├── server.py         ← Task 2.1  Fill in all TODO sections
-│   │   └── observer.py       ← Task 2.2  Fill in all TODO sections
-│   └── amqp/
-│       ├── topology.py       ← Task 3.1  Fill in all TODO sections
-│       ├── producer.py       ← Task 3.2  Fill in all TODO sections
-│       └── consumer.py       ← Task 3.3  Fill in all TODO sections
-│
-├── tests/
-│   ├── mqtt/
-│   │   ├── test_publisher.py   ← Do not modify
-│   │   └── test_qos_loss.py    ← Do not modify (run with -s for output table)
-│   ├── coap/
-│   │   └── test_server.py      ← Do not modify
-│   └── amqp/
-│       └── test_topology.py    ← Do not modify
-│
+│   │   ├── publisher.py        # Persistent session, LWT, retained status, per-sensor QoS
+│   │   └── subscriber.py       # Wildcard + QoS-2 temperature sub, critical-alert detection
+│   └── coap/
+│       ├── server.py           # 6 observable resources + actuator + Block2 manifest
+│       └── observer.py         # Concurrent observers + stale-notification (RFC 7641 §3.4)
+├── tests/                      # Pytest suite (unmodified from starter kit)
+├── captures/
+│   ├── mqtt.pcap               # 30-second loopback capture, port 1883
+│   └── coap.pcap               # 30-second loopback capture, UDP port 5683
 ├── report/
-│   ├── packet_analysis.md    ← Task 4  Fill in the annotation tables
-│   └── comparison_report.md  ← Task 5  Write your analysis here
-│
-├── captures/                 ← Task 4  pcap files go here (git-ignored)
-├── scripts/
-│   └── capture.sh            ← Task 4  Run to capture traffic
-├── config/
-│   └── mosquitto.conf        ← Mosquitto broker configuration
-├── docker-compose.yml        ← Infrastructure: Mosquitto + RabbitMQ + InfluxDB
+│   ├── packet_analysis.md      # Task 4 — wire-level annotations of CONNECT, PUBLISH, PUBACK, CON GET, ACK 2.05, Observe
+│   └── comparison_report.md    # Task 5 — QoS table, proxy mapping, recommendations, reflection
+├── config/mosquitto.conf
+├── docker-compose.yml          # Mosquitto + RabbitMQ + InfluxDB (only Mosquitto required)
 ├── requirements.txt
 ├── pytest.ini
-└── setup.sh                  ← Run this first
+└── setup.sh
 ```
 
 ---
 
-## Running Individual Components
+## What was implemented
+
+### Task 1 — MQTT (`src/mqtt/`)
+
+- Publisher connects with `clean_session=False`, declares Last Will & Testament on `factory/line1/status` (`offline`, QoS 1, retained), publishes retained `online` on startup, then streams six sensors at 1 Hz with per-sensor QoS (temperature = 1, vibration = 0, power = 2).
+- Subscriber registers both a `factory/#` wildcard (QoS 1) and a `factory/+/temperature` subscription (QoS 2), parses JSON payloads, detects temperatures > 85 °C, and prints a per-topic summary every 30 s.
+- QoS comparison experiment in `tests/mqtt/test_qos_loss.py` produces the latency table referenced in the report.
+
+### Task 2 — CoAP (`src/coap/`)
+
+- `SensorResource` (observable) — refreshes its reading every 5 s and notifies subscribers via `updated_state()`.
+- `ActuatorResource` — accepts `{"state":"ON"|"OFF"}` via PUT, returns 2.04 Changed on success or 4.00 Bad Request on invalid input.
+- `ManifestResource` — returns a ≥3 KB JSON document with 50 firmware entries, automatically fragmented by aiocoap into Block2 chunks.
+- `FactoryObserver` — registers two concurrent Observe subscriptions, runs for 60 s, then cleanly deregisters; performs RFC 7641 §3.4 freshness checks on the 24-bit sequence number; finally fetches and reassembles the Block2 manifest.
+
+### Task 4 — Packet capture and annotation
+
+Captures were produced live on the loopback interface using `tshark`. Each annotated packet in `report/packet_analysis.md` includes the raw hex, byte-by-byte field breakdown, and (where applicable) bit-level expansion of header bytes such as the MQTT Connect Flags byte and the CoAP version/type/TKL byte.
+
+### Task 5 — Comparison report
+
+`report/comparison_report.md` contains the measured QoS results, the CoAP→HTTP proxy header mapping per RFC 8075, four protocol recommendations each justified by specific evidence from the captures and tests, and a reflection on implementation challenges.
+
+---
+
+## Running locally
+
+Tested on Ubuntu 24.04 (WSL2 on Windows 11). Requires Docker, Python ≥ 3.10, and `tshark` if reproducing the packet captures.
 
 ```bash
-# Task 1 — MQTT
-python -m src.mqtt.publisher       # Terminal 1
-python -m src.mqtt.subscriber      # Terminal 2
+# Environment
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 
-# Task 2 — CoAP
-python -m src.coap.server          # Terminal 1
-python -m src.coap.observer        # Terminal 2
+# Broker
+docker compose up -d mosquitto
+```
 
-# Task 3 — AMQP (run in order)
-python -m src.amqp.topology        # Once — sets up RabbitMQ topology
-python -m src.amqp.producer        # Terminal 1
-python -m src.amqp.consumer        # Terminal 2
+### MQTT
 
-# Task 4 — Packet capture (with publisher/server running)
-bash scripts/capture.sh
+```bash
+# Terminal 1
+python -m src.mqtt.subscriber
+
+# Terminal 2
+python -m src.mqtt.publisher
+```
+
+### CoAP
+
+```bash
+# Terminal 1
+python -m src.coap.server
+
+# Terminal 2
+python -m src.coap.observer
+```
+
+### Packet captures
+
+```bash
+tshark -i lo -f "port 1883"        -w captures/mqtt.pcap -a duration:30
+tshark -i lo -f "udp port 5683"    -w captures/coap.pcap -a duration:30
 ```
 
 ---
 
-## Running Tests
+## Testing
 
 ```bash
-# All tests
-pytest tests/ -v
+# Full test suite (MQTT + CoAP)
+pytest tests/mqtt/test_publisher.py tests/coap/test_server.py -v
+```
 
-# Individual task tests
-pytest tests/mqtt/ -v
-pytest tests/coap/ -v
-pytest tests/amqp/ -v
+All 21 tests pass on the reference environment (11 MQTT + 10 CoAP). The CoAP tests require `asyncio_default_fixture_loop_scope = module` in `pytest.ini` (already set) for the module-scoped server fixture to share an event loop with its tests under `pytest-asyncio` ≥ 1.4.
 
-# QoS experiment with output table (Task 1.3)
+To reproduce the QoS comparison results from Section 5.1 of the report:
+
+```bash
 pytest tests/mqtt/test_qos_loss.py -v -s
 ```
 
 ---
 
-## Infrastructure
+## Tech stack
 
-| Service | Port | URL |
-|---------|------|-----|
-| Mosquitto MQTT | 1883 | mqtt://localhost:1883 |
-| RabbitMQ AMQP | 5672 | amqp://localhost:5672 |
-| RabbitMQ Management | 15672 | http://localhost:15672 (guest/guest) |
-| CoAP server (Python) | 5683 | coap://localhost:5683 |
-| InfluxDB (optional) | 8086 | http://localhost:8086 |
-
-```bash
-# Start all services
-docker compose up -d
-
-# Stop all services
-docker compose down
-
-# View logs
-docker compose logs -f mosquitto
-docker compose logs -f rabbitmq
-```
+- **Python 3.12** · **paho-mqtt 2.1** (with VERSION1 callback compatibility shim) · **aiocoap 0.4.17**
+- **Eclipse Mosquitto 2.0** broker (Docker)
+- **tshark / Wireshark 4.2** for live captures
+- **pytest 9.0** with `pytest-asyncio` and `pytest-timeout`
 
 ---
 
-## Submission Checklist
+## AI assistance disclosure
 
-Before zipping and submitting:
-
-- [ ] All 7 source files have TODO sections completed
-- [ ] `pytest tests/ -v` passes (or partial passes documented)
-- [ ] `captures/` contains mqtt.pcap, coap.pcap, amqp.pcap
-- [ ] `report/packet_analysis.md` — all annotation tables filled in
-- [ ] `report/comparison_report.md` — all sections written (1500–2000 words total)
-- [ ] README.md updated with your name and any notes for the marker
+In accordance with the course's academic integrity policy, this submission acknowledges that an AI assistant (Anthropic's Claude) was used during development for code implementation against the starter-kit TODOs, refactoring and troubleshooting guidance, and assistance drafting the report. All environment setup, packet captures, test execution, and verification of outputs were performed by the author in the local WSL2 environment, and every captured value reported in `report/packet_analysis.md` corresponds to packets present in the included `.pcap` files.
 
 ---
 
-*Graduate Course: Real-Time Data Analytics for IoT · Module 1*
+*Module 2 · Real-Time Data Analytics for IoT · Ontario Tech University*
