@@ -225,3 +225,15 @@ CoAP bytes:
 ---
 
 *Module 1 Assignment — Real-Time Data Analytics for IoT*
+
+---
+
+## Appendix A — Test Suite Execution Record
+
+The full pytest output collected on the reference environment (Ubuntu 24.04 WSL2, Python 3.12, paho-mqtt 2.1, aiocoap 0.4.17) is preserved verbatim in [`report/test_results.txt`](test_results.txt). Summary:
+
+- `tests/mqtt/test_publisher.py` — **11 / 11 passed** (publisher persistent session, topic format, per-sensor QoS, LWT, subscriber wildcard, QoS 2 temperature sub, critical alert above threshold, no false alert below, message count tracking)
+- `tests/coap/test_server.py` — **10 / 10 passed** (temperature/vibration/power GET on both lines, actuator PUT ON/OFF/invalid, Block2 manifest size + valid JSON, `.well-known/core` discovery)
+- `tests/mqtt/test_qos_loss.py` — **1 / 1 passed** (60-second QoS comparison harness; results table reproduced in Section 5.1 of `comparison_report.md`)
+
+**Total: 22 passed, 0 failed.** AMQP tests under `tests/amqp/` were not executed because the corresponding implementation is out of scope per instructor guidance.

@@ -1,0 +1,91 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0 -- /home/mustafaerensoyhan/smartfactory/smartfactory-iot/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/mustafaerensoyhan/smartfactory/smartfactory-iot
+configfile: pytest.ini
+plugins: timeout-2.4.0, asyncio-1.4.0
+timeout: 30.0s
+timeout method: signal
+timeout func_only: False
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=module, asyncio_default_test_loop_scope=module
+collecting ... collected 22 items
+
+tests/mqtt/test_publisher.py::TestPublisher::test_connect_uses_persistent_session PASSED [  4%]
+tests/mqtt/test_publisher.py::TestPublisher::test_correct_topic_format PASSED [  9%]
+tests/mqtt/test_publisher.py::TestPublisher::test_publishes_all_six_sensors 
+-------------------------------- live log call ---------------------------------
+INFO     src.mqtt.publisher:publisher.py:161 [line1/temperature] value=76.398 C  QoS=1  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line1/vibration] value=1.535 mm/s  QoS=0  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line1/power] value=46.477 kW  QoS=2  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line2/temperature] value=68.033 C  QoS=1  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line2/vibration] value=1.773 mm/s  QoS=0  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line2/power] value=38.517 kW  QoS=2  seq=1
+PASSED                                                                   [ 13%]
+tests/mqtt/test_publisher.py::TestPublisher::test_correct_qos_per_sensor 
+-------------------------------- live log call ---------------------------------
+INFO     src.mqtt.publisher:publisher.py:161 [line1/temperature] value=68.997 C  QoS=1  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line1/vibration] value=1.028 mm/s  QoS=0  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line1/power] value=41.45 kW  QoS=2  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line2/temperature] value=69.668 C  QoS=1  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line2/vibration] value=1.106 mm/s  QoS=0  seq=1
+INFO     src.mqtt.publisher:publisher.py:161 [line2/power] value=48.048 kW  QoS=2  seq=1
+PASSED                                                                   [ 18%]
+tests/mqtt/test_publisher.py::TestPublisher::test_lwt_configured PASSED  [ 22%]
+tests/mqtt/test_publisher.py::TestPublisher::test_reading_payload_is_valid_json 
+-------------------------------- live log call ---------------------------------
+INFO     src.mqtt.publisher:publisher.py:161 [line1/temperature] value=71.589 C  QoS=1  seq=1
+PASSED                                                                   [ 27%]
+tests/mqtt/test_publisher.py::TestSubscriber::test_wildcard_subscription_registered 
+-------------------------------- live log call ---------------------------------
+INFO     src.mqtt.subscriber:subscriber.py:65 Connected to broker
+INFO     src.mqtt.subscriber:subscriber.py:70 Subscribed: factory/# (QoS 1) and factory/+/temperature (QoS 2)
+PASSED                                                                   [ 31%]
+tests/mqtt/test_publisher.py::TestSubscriber::test_temperature_qos2_subscription 
+-------------------------------- live log call ---------------------------------
+INFO     src.mqtt.subscriber:subscriber.py:65 Connected to broker
+INFO     src.mqtt.subscriber:subscriber.py:70 Subscribed: factory/# (QoS 1) and factory/+/temperature (QoS 2)
+PASSED                                                                   [ 36%]
+tests/mqtt/test_publisher.py::TestSubscriber::test_critical_alert_fires_above_threshold PASSED [ 40%]
+tests/mqtt/test_publisher.py::TestSubscriber::test_no_alert_below_threshold PASSED [ 45%]
+tests/mqtt/test_publisher.py::TestSubscriber::test_message_counts_tracked 
+-------------------------------- live log call ---------------------------------
+INFO     src.mqtt.subscriber:subscriber.py:108 [21:08:13] factory/line1/temperature  val=70.0 C  QoS=1  retain=False
+INFO     src.mqtt.subscriber:subscriber.py:108 [21:08:13] factory/line1/temperature  val=70.0 C  QoS=1  retain=False
+PASSED                                                                   [ 50%]
+tests/coap/test_server.py::TestCoAPServer::test_get_temperature_line1 PASSED [ 54%]
+tests/coap/test_server.py::TestCoAPServer::test_get_vibration_line1 PASSED [ 59%]
+tests/coap/test_server.py::TestCoAPServer::test_get_power_line1 PASSED   [ 63%]
+tests/coap/test_server.py::TestCoAPServer::test_get_temperature_line2 PASSED [ 68%]
+tests/coap/test_server.py::TestCoAPServer::test_put_actuator_on 
+-------------------------------- live log call ---------------------------------
+INFO     src.coap.server:server.py:129 Fan state changed → ON
+PASSED                                                                   [ 72%]
+tests/coap/test_server.py::TestCoAPServer::test_put_actuator_off 
+-------------------------------- live log call ---------------------------------
+INFO     src.coap.server:server.py:129 Fan state changed → OFF
+PASSED                                                                   [ 77%]
+tests/coap/test_server.py::TestCoAPServer::test_put_actuator_invalid PASSED [ 81%]
+tests/coap/test_server.py::TestCoAPServer::test_block2_manifest_large_enough PASSED [ 86%]
+tests/coap/test_server.py::TestCoAPServer::test_block2_manifest_valid_json PASSED [ 90%]
+tests/coap/test_server.py::TestCoAPServer::test_well_known_core PASSED   [ 95%]
+tests/mqtt/test_qos_loss.py::test_qos_comparison_under_loss PASSED       [100%]
+
+=============================== warnings summary ===============================
+tests/mqtt/test_publisher.py::TestSubscriber::test_wildcard_subscription_registered
+tests/mqtt/test_publisher.py::TestSubscriber::test_temperature_qos2_subscription
+tests/mqtt/test_publisher.py::TestSubscriber::test_critical_alert_fires_above_threshold
+tests/mqtt/test_publisher.py::TestSubscriber::test_no_alert_below_threshold
+tests/mqtt/test_publisher.py::TestSubscriber::test_message_counts_tracked
+  /home/mustafaerensoyhan/smartfactory/smartfactory-iot/src/mqtt/subscriber.py:48: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+    self._client      = mqtt.Client(
+
+tests/mqtt/test_qos_loss.py::test_qos_comparison_under_loss
+  /home/mustafaerensoyhan/smartfactory/smartfactory-iot/tests/mqtt/test_qos_loss.py:42: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+    client = mqtt.Client(client_id="qos-test-subscriber")
+
+tests/mqtt/test_qos_loss.py::test_qos_comparison_under_loss
+  /home/mustafaerensoyhan/smartfactory/smartfactory-iot/tests/mqtt/test_qos_loss.py:84: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+    pub = mqtt.Client(client_id="qos-test-publisher")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 22 passed, 7 warnings in 19.85s ========================
