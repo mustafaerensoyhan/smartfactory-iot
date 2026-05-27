@@ -90,4 +90,4 @@ The second surprise was **how compact CoAP option delta encoding is**. Three con
 
 ---
 
-*Module 1 Assignment — Real-Time Data Analytics for IoT*
+*Module 2 Assignment — Real-Time Data Analytics for IoT*
