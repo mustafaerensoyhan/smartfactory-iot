@@ -2,7 +2,7 @@
 
 A simulated real-time IoT data pipeline for a factory with two production lines. Sensors publish telemetry through **MQTT** and **CoAP**; subscribers consume and process the streams; packet-level traces and a comparative analysis are included.
 
-Submission for **Module 1 — Real-Time Data Analytics for IoT** (Graduate, Ontario Tech University).
+**Module 1 — Real-Time Data Analytics for IoT** (Graduate, Ontario Tech University).
 
 ---
 
