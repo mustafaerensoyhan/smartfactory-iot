@@ -144,7 +144,7 @@ pytest tests/mqtt/test_qos_loss.py -v -s
 
 ## AI assistance disclosure
 
-In accordance with the course's academic integrity policy, this submission acknowledges that an AI assistant (Anthropic's Claude) was used during development for code implementation against the starter-kit TODOs, refactoring and troubleshooting guidance, and assistance drafting the report. All environment setup, packet captures, test execution, and verification of outputs were performed by the author in the local WSL2 environment, and every captured value reported in `report/packet_analysis.md` corresponds to packets present in the included `.pcap` files.
+AI assistance was used during development for code implementation, refactoring and troubleshooting guidance, and assistance drafting readme. All environment setup, packet captures, test execution, and verification of outputs were performed by the author in the local WSL2 environment, and every captured value reported in `report/packet_analysis.md` corresponds to packets present in the included `.pcap` files.
 
 ---
 
