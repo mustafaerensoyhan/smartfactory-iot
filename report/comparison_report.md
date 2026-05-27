@@ -1,4 +1,4 @@
-# Module 2 Assignment — Protocol Comparison Report
+# Module 1 Assignment — Protocol Comparison Report
 
 **Student Name:** Mustafa Eren Soyhan
 **Student ID:** 101045056
@@ -90,4 +90,4 @@ The second surprise was **how compact CoAP option delta encoding is**. Three con
 
 ---
 
-*Module 2 Assignment — Real-Time Data Analytics for IoT*
+*Module 1 Assignment — Real-Time Data Analytics for IoT*
