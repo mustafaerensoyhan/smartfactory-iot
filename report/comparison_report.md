@@ -1,4 +1,4 @@
-# Module 1 Assignment — Protocol Comparison Report
+# Module 2 Assignment — Protocol Comparison Report
 
 **Student Name:** Mustafa Eren Soyhan
 **Student ID:** 101045056
