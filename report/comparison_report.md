@@ -27,6 +27,23 @@ For CoAP, all 26 server-pushed Observe notifications were received and applied i
 
 ---
 
+## 5.1.1 CoAP Reliability Under Simulated Loss
+
+The clean-loopback table above measures *delivery* but not *resilience*, because loopback is effectively lossless. To exercise the reliability difference between **CoAP CON** (confirmable, retransmitted on missing ACK) and **CoAP NON** (non-confirmable, fire-and-forget), a controlled in-process loss experiment was run via `scripts/coap_loss_experiment.py`: 100 GET requests of each type to `/factory/line1/power`, with a 10% per-attempt drop probability injected in the client (each attempt independently fails its `random.random() < 0.10` check). CON requests were given up to 3 retransmission attempts before being declared lost; NON requests had only one attempt by definition.
+
+| Protocol | Sent | Received | Lost (%) | Avg Latency (ms) |
+|----------|------|----------|----------|------------------|
+| CoAP NON | 100  | 87       | 13.0%    | 1.7              |
+| CoAP CON | 100  | 100      | 0.0%     | 1.8              |
+
+**Interpretation.** The 13% NON loss tracks the 10% injection rate (slight upward variance from the random seed used; expected statistical noise on N=100). The CoAP CON row demonstrates the value of confirmable messaging directly: although CON attempts faced the *same* 10% drop probability, **every single message was eventually received** because each dropped attempt triggered a retransmission. With three retries available, the probability of total loss per message is ≈ 0.10³ = 0.001, so seeing 0/100 lost across the run is consistent with theory. Latencies are statistically indistinguishable (1.7 ms NON, 1.8 ms CON) because, for the messages that *did* get through on the first attempt, the protocols incur identical round-trip costs — CON only pays its retransmission cost on the actual drops.
+
+**Why in-process loss rather than `tc netem`.** A standard Linux approach would be `sudo tc qdisc add dev lo root netem loss 10%`. This was attempted but verified to have **no effect** on the WSL2 loopback interface — repeated runs with netem applied still produced 0% loss across every row, because WSL2's virtualised network stack does not honour `netem` on `lo`. Injecting loss inside the Python client (`coap_loss_experiment.py::dropped()`) is therefore the only reliable way to exercise CON's recovery behaviour on this platform, and it has the additional advantage of being deterministic via the `SEED = 42` random seed (the exact numbers above can be reproduced by re-running the script).
+
+**Caveat on latency under loss.** The 1.8 ms CON figure reflects only the *successful first attempts*. In a true network with kernel-level loss (where dropped packets force a wait for aiocoap's CON retransmission timer to expire, typically 2 s by default), CON latency under loss would rise sharply. The in-process model used here does not impose that wait — it simply retries immediately — so the latency column should be read as "round-trip cost when a packet arrives" rather than "cost including retransmission delay." This is a known limitation of the in-process method and is mentioned in the experiment script's docstring.
+
+---
+
 ## 5.2 CoAP–HTTP Proxy Mapping
 
 The course's `test_proxy.py` was not bundled in the provided starter kit, so a live CoAP→HTTP proxy run was not performed. The table below documents the mappings prescribed by **RFC 8075 (Guidelines for Mapping Implementations: HTTP to the Constrained Application Protocol)**, with "Observed Value" filled in based on the actual headers a proxy in front of our CoAP server (`src.coap.server`) would emit for a GET on `/factory/line1/temperature`. Our server's responses carry Content-Format 50 (application/json) and no Max-Age or ETag options, which determines several of the columns below.
