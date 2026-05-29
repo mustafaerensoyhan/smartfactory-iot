@@ -1,0 +1,8 @@
+HTTP/1.0 200 OK
+Server: BaseHTTP/0.6 Python/3.12.3
+Date: Fri, 29 May 2026 03:48:33 GMT
+Content-Type: application/json
+Cache-Control: max-age=60
+Content-Length: 72
+
+{"value": 72.208, "unit": "C", "ts": "2026-05-29T03:48:28.406770+00:00"}
