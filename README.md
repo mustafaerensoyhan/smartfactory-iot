@@ -18,7 +18,7 @@ The simulated factory has two production lines (`line1`, `line2`), each with thr
 
 A critical alert fires when any temperature reading exceeds **85 °C**. Cooling fans are addressable via CoAP PUT.
 
-The pipeline is implemented twice (MQTT and CoAP) so the two protocols can be compared on the same workload. AMQP (Task 3) is intentionally out of scope for this submission per instructor guidance; the corresponding starter scaffolding remains under `src/amqp/` but is not implemented.
+The pipeline is implemented for MQTT and CoAP so the two protocols can be compared on the same workload. AMQP is intentionally out of scope for this submission per instructor guidance; the corresponding starter scaffolding remains under `src/amqp/` but is not implemented.
 
 ---
 
