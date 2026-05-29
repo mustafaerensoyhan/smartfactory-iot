@@ -42,14 +42,14 @@ The 13% NON loss tracks the 10% injection rate within expected statistical noise
 
 ## 5.2 CoAP–HTTP Proxy Mapping
 
-The course's `test_proxy.py` was not bundled in the provided starter kit, so a live CoAP→HTTP proxy run was not performed. The table below documents the mappings prescribed by **RFC 8075 (Guidelines for Mapping Implementations: HTTP to the Constrained Application Protocol)**, with "Observed Value" filled in based on the actual headers a proxy in front of our CoAP server (`src.coap.server`) would emit for a GET on `/factory/line1/temperature`. Our server's responses carry Content-Format 50 (application/json) and no Max-Age or ETag options, which determines several of the columns below.
+A live CoAP→HTTP proxy run was performed using a minimal forward proxy (`scripts/coap_http_proxy.py`) that accepts HTTP GETs on port 8080 and translates each into a CoAP CON GET against the local CoAP server, mapping response options to HTTP headers per RFC 8075. The headers below were captured by `curl -i http://localhost:8080/factory/line1/temperature` (full response preserved in [`report/proxy_response.txt`](proxy_response.txt)).
 
 | HTTP Header | CoAP Option | Observed Value |
 |---|---|---|
-| `Content-Type` | Content-Format (Option 12) | `application/json` (CoAP option value `0x32` = 50) |
-| `Cache-Control: max-age` | Max-Age (Option 14) | Not set by our server → proxy would emit the CoAP default of `max-age=60` (RFC 7252 §5.10.5) |
-| `ETag` | ETag (Option 4) | Not set — our resources are observable and update every 5 s, so ETag caching is intentionally avoided |
-| `Location` | Location-Path (Option 8) + Location-Query (Option 20) | Not used for GET responses (these options apply to 2.01 Created responses from POST/PUT) |
+| `Content-Type` | Content-Format (Option 12) | **`application/json`** — captured directly from `curl -i` (CoAP option value `0x32` = 50) |
+| `Cache-Control: max-age` | Max-Age (Option 14) | **`max-age=60`** — captured (CoAP default per RFC 7252 §5.10.5; server emits no Max-Age option, so proxy supplies the default) |
+| `ETag` | ETag (Option 4) | Not emitted — server does not set the ETag option (observable resources update every 5 s, so ETag caching is intentionally avoided) |
+| `Location` | Location-Path (Option 8) + Location-Query (Option 20) | Not emitted — GET responses do not carry these (they apply to 2.01 Created responses from POST/PUT) |
 
 **Why the proxy mapping matters:** CoAP options are numerically identified and binary-encoded for size; HTTP headers are textual and ASCII. The proxy translates representations bidirectionally but preserves semantics. Content-Format `50` is a single numeric token on the CoAP side compared with the ~16-byte ASCII string `application/json` on the HTTP side — a vivid example of why CoAP is preferred over constrained links. Conversely, Max-Age has a meaningful default (60 s) in CoAP that the proxy must surface explicitly as `Cache-Control: max-age=60` in HTTP, otherwise an HTTP/1.1 client would treat the response as non-cacheable.
 
