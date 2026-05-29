@@ -4,7 +4,7 @@
 **Student ID:** 101045056
 **Date:** 26/05/2026
 **Course:** Real-Time Data Analytics for IoT
-**Note on scope:** Per instructor guidance, AMQP (Task 3) is excluded from grading. This report covers MQTT (Task 1), CoAP (Task 2), and the comparative analysis based on those two protocols. The AMQP row in Section 5.1 is therefore marked N/A.
+**Note on scope:** Per instructor guidance, AMQP is excluded. This report covers MQTT, CoAP, and the comparative analysis based on those two protocols. The AMQP row in Section 5.1 is therefore marked N/A.
 
 ---
 
